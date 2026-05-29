@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tweet Sentiment Analyzer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap');
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{--bg:#0a0a0f;--surface:#12121a;--card:#1a1a26;--border:#2a2a40;--accent:#7c6af7;--pos:#4ade80;--neg:#f87171;--neu:#94a3b8;--text:#e8e8f0;--muted:#6b6b8a}
+  body{font-family:'Syne',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:2rem 1rem}
+  .container{max-width:900px;margin:0 auto}
+  header{text-align:center;margin-bottom:3rem;position:relative}
+  .glow{width:300px;height:300px;background:radial-gradient(circle,rgba(124,106,247,.15) 0%,transparent 70%);position:absolute;top:-80px;left:50%;transform:translateX(-50%);pointer-events:none}
+  .badge{display:inline-block;font-family:'Space Mono',monospace;font-size:11px;color:var(--accent);border:1px solid var(--accent);padding:4px 14px;border-radius:20px;margin-bottom:1rem;letter-spacing:2px;text-transform:uppercase}
+  h1{font-size:clamp(2rem,5vw,3.5rem);font-weight:800;line-height:1.1;background:linear-gradient(135deg,#e8e8f0 30%,#7c6af7 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:.75rem}
+  .subtitle{color:var(--muted);font-size:1rem}
+  .search-box{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:1.5rem;margin-bottom:2rem;display:flex;gap:12px;align-items:center}
+  .search-box input{flex:1;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px 18px;color:var(--text);font-family:'Syne',sans-serif;font-size:1rem;outline:none;transition:border-color .2s}
+  .search-box input:focus{border-color:var(--accent)}
+  .search-box input::placeholder{color:var(--muted)}
+  .btn{background:var(--accent);color:#fff;border:none;border-radius:10px;padding:14px 28px;font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;cursor:pointer;transition:opacity .2s,transform .1s;white-space:nowrap}
+  .btn:hover{opacity:.85}.btn:active{transform:scale(.97)}.btn:disabled{opacity:.5;cursor:not-allowed}
+  .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:2rem}
+  .metric-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:1.25rem}
+  .metric-label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;font-family:'Space Mono',monospace}
+  .metric-value{font-size:2rem;font-weight:800;color:var(--text)}
+  .metric-sub{font-size:12px;margin-top:4px;font-weight:600;padding:3px 10px;border-radius:20px;display:inline-block}
+  .sub-pos{background:rgba(74,222,128,.15);color:var(--pos)}.sub-neg{background:rgba(248,113,113,.15);color:var(--neg)}.sub-neu{background:rgba(148,163,184,.15);color:var(--neu)}.sub-def{background:rgba(124,106,247,.15);color:var(--accent)}
+  .charts-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+  .chart-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:1.25rem;margin-bottom:16px}
+  .chart-title{font-size:13px;color:var(--muted);font-family:'Space Mono',monospace;text-transform:uppercase;letter-spacing:1px;margin-bottom:1rem}
+  .chart-wrap{position:relative;width:100%;height:200px}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px}
+  .legend span{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+  .leg-dot{width:10px;height:10px;border-radius:2px}
+  .explain-card{background:linear-gradient(135deg,rgba(124,106,247,.1),rgba(247,106,138,.05));border:1px solid rgba(124,106,247,.3);border-radius:14px;padding:1.25rem 1.5rem;margin-bottom:2rem;font-size:15px;line-height:1.7;color:var(--text)}
+  .explain-card strong{color:var(--accent)}
+  .tweets-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:1.25rem;margin-bottom:2rem}
+  .tweet-item{padding:14px 0;border-bottom:1px solid var(--border)}.tweet-item:last-child{border-bottom:none}
+  .tweet-text{font-size:14px;color:var(--text);line-height:1.6;margin-bottom:8px}
+  .tweet-meta{display:flex;align-items:center;gap:10px}
+  .t-badge{font-size:11px;font-family:'Space Mono',monospace;padding:3px 10px;border-radius:20px;font-weight:700}
+  .tb-pos{background:rgba(74,222,128,.15);color:var(--pos)}.tb-neg{background:rgba(248,113,113,.15);color:var(--neg)}.tb-neu{background:rgba(148,163,184,.15);color:var(--neu)}
+  .t-score{font-size:12px;color:var(--muted);font-family:'Space Mono',monospace}
+  .vader-scores{font-size:11px;color:var(--muted);margin-top:4px;font-family:'Space Mono',monospace}
+  .empty-state{text-align:center;padding:4rem 2rem;color:var(--muted)}
+  .empty-state .big-icon{font-size:4rem;margin-bottom:1rem;opacity:.3}
+  .loading-state{text-align:center;padding:4rem 2rem;color:var(--muted);display:none}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 1rem}
+  #results{display:none}
+  .footer-note{text-align:center;font-size:12px;color:var(--muted);font-family:'Space Mono',monospace;margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)}
+  @media(max-width:600px){.metrics{grid-template-columns:1fr}.charts-grid{grid-template-columns:1fr}.search-box{flex-direction:column}}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="glow"></div>
+    <div class="badge">NLP · VADER · Flask</div>
+    <h1>Tweet Sentiment Analyzer</h1>
+    <p class="subtitle">Powered by VADER NLP — enter any keyword to analyze tweet sentiments</p>
+  </header>
+
+  <div class="search-box">
+    <input type="text" id="keyword" placeholder="e.g.  ChatGPT,  climate change,  iPhone 16..." />
+    <button class="btn" id="analyzeBtn" onclick="runAnalysis()">Analyze →</button>
+  </div>
+
+  <div id="emptyState" class="empty-state">
+    <div class="big-icon">🐦</div>
+    <p>Enter a keyword above to analyze tweet sentiments</p>
+  </div>
+  <div id="loadingState" class="loading-state">
+    <div class="spinner"></div>
+    <p>Running VADER sentiment analysis...</p>
+  </div>
+
+  <div id="results">
+    <div class="metrics">
+      <div class="metric-card">
+        <div class="metric-label">Tweets Analyzed</div>
+        <div class="metric-value" id="totalCount">0</div>
+        <div class="metric-sub sub-def">sample dataset</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Overall Mood</div>
+        <div class="metric-value" id="overallMood">—</div>
+        <div class="metric-sub" id="moodBadge">—</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Avg Confidence</div>
+        <div class="metric-value" id="confidence">0%</div>
+        <div class="metric-sub sub-def">VADER score</div>
+      </div>
+    </div>
+
+    <div class="charts-grid">
+      <div class="chart-card">
+        <div class="chart-title">Sentiment Breakdown</div>
+        <div class="legend">
+          <span><span class="leg-dot" style="background:#4ade80"></span>Positive</span>
+          <span><span class="leg-dot" style="background:#f87171"></span>Negative</span>
+          <span><span class="leg-dot" style="background:#94a3b8"></span>Neutral</span>
+        </div>
+        <div class="chart-wrap"><canvas id="pieChart"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Confidence Distribution</div>
+        <div class="legend">
+          <span><span class="leg-dot" style="background:#4ade80"></span>Positive</span>
+          <span><span class="leg-dot" style="background:#f87171"></span>Negative</span>
+        </div>
+        <div class="chart-wrap"><canvas id="barChart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-title">Sentiment Trend Over Time (Simulated)</div>
+      <div style="position:relative;width:100%;height:180px;"><canvas id="lineChart"></canvas></div>
+    </div>
+
+    <div class="explain-card" id="explainBox"></div>
+
+    <div class="tweets-card">
+      <div class="chart-title" style="margin-bottom:1rem">Sample Analyzed Tweets (VADER Scores)</div>
+      <div id="tweetList"></div>
+    </div>
+
+    <div class="footer-note">
+      Built with Python · Flask · VADER NLP · Chart.js &nbsp;|&nbsp; B.Tech CSE (Data Science) Resume Project
+    </div>
+  </div>
+</div>
+
+<script>
+let charts = {};
+function destroyCharts(){Object.values(charts).forEach(c=>{try{c.destroy()}catch(e){}});charts={}}
+
+async function runAnalysis(){
+  const kw = document.getElementById('keyword').value.trim();
+  if(!kw) return;
+  document.getElementById('emptyState').style.display='none';
+  document.getElementById('results').style.display='none';
+  document.getElementById('loadingState').style.display='block';
+  document.getElementById('analyzeBtn').disabled=true;
+
+  try{
+    const res  = await fetch('/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keyword:kw})});
+    const data = await res.json();
+    destroyCharts();
+
+    document.getElementById('totalCount').textContent = data.total;
+    document.getElementById('overallMood').textContent = data.dominant;
+    document.getElementById('confidence').textContent  = data.avg_conf+'%';
+
+    const mb = document.getElementById('moodBadge');
+    const moodMap = {Positive:['😊 Positive vibes','sub-pos'],Negative:['😟 Negative vibes','sub-neg'],Neutral:['😐 Mixed vibes','sub-neu']};
+    mb.textContent = moodMap[data.dominant][0];
+    mb.className   = 'metric-sub '+moodMap[data.dominant][1];
+
+    const pct = Math.round(data.counts[data.dominant]/data.total*100);
+    const explainMap = {
+      Positive:`People are talking about <strong>${data.keyword}</strong> in a mostly positive way — <strong>${pct}%</strong> of tweets show appreciation or satisfaction. VADER compound scores confirm strong positive sentiment.`,
+      Negative:`The conversation around <strong>${data.keyword}</strong> leans negative — <strong>${pct}%</strong> of tweets express disappointment or frustration. VADER detected strong negative language patterns.`,
+      Neutral:`Tweets about <strong>${data.keyword}</strong> are mostly informational — <strong>${pct}%</strong> are neutral in tone. VADER found balanced sentiment with no strong emotional lean.`
+    };
+    document.getElementById('explainBox').innerHTML = explainMap[data.dominant];
+
+    charts.pie = new Chart(document.getElementById('pieChart'),{
+      type:'doughnut',
+      data:{labels:['Positive','Negative','Neutral'],datasets:[{data:[data.counts.Positive,data.counts.Negative,data.counts.Neutral],backgroundColor:['#4ade80','#f87171','#94a3b8'],borderWidth:0,hoverOffset:6}]},
+      options:{responsive:true,maintainAspectRatio:false,cutout:'65%',plugins:{legend:{display:false}}}
+    });
+
+    const ranges=['0.5','0.6','0.7','0.8','0.9','1.0'];
+    const posD=Array(6).fill(0),negD=Array(6).fill(0);
+    data.tweets.forEach(t=>{
+      const idx=Math.min(Math.floor((t.confidence-0.5)/0.1),5);
+      if(idx>=0){if(t.label==='Positive')posD[idx]++;else if(t.label==='Negative')negD[idx]++;}
+    });
+    charts.bar = new Chart(document.getElementById('barChart'),{
+      type:'bar',
+      data:{labels:ranges,datasets:[{label:'Positive',data:posD,backgroundColor:'#4ade80',borderWidth:0,borderRadius:4},{label:'Negative',data:negD,backgroundColor:'#f87171',borderWidth:0,borderRadius:4}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{color:'rgba(255,255,255,0.05)'},ticks:{color:'#6b6b8a',font:{size:11}}},y:{grid:{color:'rgba(255,255,255,0.05)'},ticks:{color:'#6b6b8a',stepSize:1}}}}
+    });
+
+    const hours=['0h','3h','6h','9h','12h','15h','18h','21h'];
+    charts.line = new Chart(document.getElementById('lineChart'),{
+      type:'line',
+      data:{labels:hours,datasets:[{label:'% Positive',data:data.trend,borderColor:'#7c6af7',backgroundColor:'rgba(124,106,247,0.1)',tension:0.4,fill:true,pointRadius:4,pointBackgroundColor:'#7c6af7',borderWidth:2}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{min:0,max:100,ticks:{callback:v=>v+'%',color:'#6b6b8a',font:{size:11}},grid:{color:'rgba(255,255,255,0.05)'}},x:{grid:{display:false},ticks:{color:'#6b6b8a',font:{size:11}}}}}
+    });
+
+    document.getElementById('tweetList').innerHTML = data.tweets.map(t=>`
+      <div class="tweet-item">
+        <p class="tweet-text">${t.text}</p>
+        <div class="tweet-meta">
+          <span class="t-badge ${t.label==='Positive'?'tb-pos':t.label==='Negative'?'tb-neg':'tb-neu'}">${t.label}</span>
+          <span class="t-score">Confidence: ${Math.round(t.confidence*100)}%</span>
+        </div>
+        <div class="vader-scores">VADER → pos: ${t.positive} | neg: ${t.negative} | neu: ${t.neutral} | compound: ${t.compound}</div>
+      </div>`).join('');
+
+    document.getElementById('loadingState').style.display='none';
+    document.getElementById('results').style.display='block';
+  } catch(err){
+    alert('Error: '+err.message);
+  } finally {
+    document.getElementById('analyzeBtn').disabled=false;
+    document.getElementById('loadingState').style.display='none';
+  }
+}
+document.getElementById('keyword').addEventListener('keydown',e=>{if(e.key==='Enter')runAnalysis()});
+</script>
+</body>
+</html>
