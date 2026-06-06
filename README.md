@@ -17,10 +17,10 @@ Built as a resume project for B.Tech CSE (Data Science) at **Bennett University*
 ## 📸 Screenshots
 
 ### Home Page
-![Home Page](screenshots/home.jpg)
+![Home Page](home.jpg)
 
 ### Analysis Results
-![Results](screenshots/results.jpg)
+![Results](result.jpg)
 
 ---
 
