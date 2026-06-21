@@ -1,15 +1,21 @@
+import json
+import os
+import random
+from urllib.error import URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
+
 from flask import Flask, render_template, request, jsonify
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
-import random
 
 app = Flask(__name__)
 analyzer = SentimentIntensityAnalyzer()
 
-# ── Simulated tweet templates ──────────────────────────────────────────────────
+# Simulated tweet templates.
 TEMPLATES = {
     "positive": [
         "Just tried {kw} and honestly blown away. So much better than expected!",
-        "Can't stop talking about {kw} — it's a total game changer this year.",
+        "Can't stop talking about {kw} - it's a total game changer this year.",
         "{kw} just solved a problem I've had for years. Highly recommend it.",
         "Massive shoutout to the {kw} team. This is incredible work.",
         "{kw} actually exceeded all my expectations. Brilliant stuff.",
@@ -40,6 +46,9 @@ TEMPLATES = {
     ],
 }
 
+DEFAULT_XQUIK_SEARCH_URL = "https://xquik.com/api/v1/x/tweets/search"
+DEFAULT_XQUIK_LIMIT = 18
+
 
 def generate_tweets(keyword: str) -> list[dict]:
     """Generate simulated tweets for the given keyword."""
@@ -47,7 +56,7 @@ def generate_tweets(keyword: str) -> list[dict]:
     counts = {
         "positive": 7 + random.randint(0, 4),
         "negative": 3 + random.randint(0, 4),
-        "neutral":  3 + random.randint(0, 3),
+        "neutral": 3 + random.randint(0, 3),
     }
     for category, n in counts.items():
         tmpl_list = TEMPLATES[category]
@@ -58,12 +67,78 @@ def generate_tweets(keyword: str) -> list[dict]:
     return tweets
 
 
+def tweet_text(tweet: object) -> str | None:
+    """Extract tweet text from a normalized API record."""
+    if not isinstance(tweet, dict):
+        return None
+
+    for key in ("text", "fullText", "full_text"):
+        value = tweet.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    return None
+
+
+def fetch_xquik_tweets(keyword: str, limit: int = DEFAULT_XQUIK_LIMIT) -> list[dict]:
+    """Fetch live tweets from Xquik when an API key is configured."""
+    api_key = os.environ.get("XQUIK_API_KEY", "").strip()
+    if not api_key:
+        return []
+
+    search_url = os.environ.get("XQUIK_SEARCH_URL", DEFAULT_XQUIK_SEARCH_URL).strip()
+    query = urlencode(
+        {
+            "q": keyword,
+            "queryType": "Latest",
+            "limit": max(1, min(limit, 100)),
+        }
+    )
+    request = Request(
+        f"{search_url}?{query}",
+        headers={
+            "Accept": "application/json",
+            "x-api-key": api_key,
+        },
+    )
+
+    try:
+        with urlopen(request, timeout=8) as response:
+            payload = json.load(response)
+    except (OSError, URLError, ValueError):
+        return []
+
+    if not isinstance(payload, dict):
+        return []
+
+    tweets = payload.get("tweets")
+    if not isinstance(tweets, list):
+        return []
+
+    live_tweets = []
+    for tweet in tweets:
+        text = tweet_text(tweet)
+        if text:
+            live_tweets.append({"text": text, "category": "live"})
+
+    return live_tweets
+
+
+def tweets_for_keyword(keyword: str) -> tuple[list[dict], str]:
+    """Use live tweets when available, otherwise keep the local sample flow."""
+    live_tweets = fetch_xquik_tweets(keyword)
+    if live_tweets:
+        return live_tweets, "xquik"
+
+    return generate_tweets(keyword), "sample"
+
+
 def analyze_tweets(tweets: list[dict]) -> list[dict]:
     """Run VADER sentiment analysis on each tweet."""
     results = []
     for tweet in tweets:
         scores = analyzer.polarity_scores(tweet["text"])
-        compound = scores["compound"]           # -1.0 to +1.0
+        compound = scores["compound"]  # -1.0 to +1.0
 
         if compound >= 0.05:
             label = "Positive"
@@ -72,21 +147,24 @@ def analyze_tweets(tweets: list[dict]) -> list[dict]:
         else:
             label = "Neutral"
 
-        confidence = round(abs(compound) * 0.5 + 0.5, 2)   # map to 0.5–1.0 range
+        confidence = round(abs(compound) * 0.5 + 0.5, 2)  # map to 0.5-1.0 range
 
-        results.append({
-            "text":       tweet["text"],
-            "label":      label,
-            "compound":   round(compound, 3),
-            "positive":   round(scores["pos"], 3),
-            "negative":   round(scores["neg"], 3),
-            "neutral":    round(scores["neu"], 3),
-            "confidence": confidence,
-        })
+        results.append(
+            {
+                "text": tweet["text"],
+                "label": label,
+                "compound": round(compound, 3),
+                "positive": round(scores["pos"], 3),
+                "negative": round(scores["neg"], 3),
+                "neutral": round(scores["neu"], 3),
+                "confidence": confidence,
+            }
+        )
     return results
 
 
-# ── Routes ─────────────────────────────────────────────────────────────────────
+# Routes.
+
 
 @app.route("/")
 def index():
@@ -95,35 +173,38 @@ def index():
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
-    data    = request.get_json()
+    data = request.get_json(silent=True) or {}
     keyword = data.get("keyword", "").strip()
     if not keyword:
         return jsonify({"error": "Keyword is required"}), 400
 
-    tweets  = generate_tweets(keyword)
+    tweets, source = tweets_for_keyword(keyword)
     results = analyze_tweets(tweets)
 
     counts = {"Positive": 0, "Negative": 0, "Neutral": 0}
     for r in results:
         counts[r["label"]] += 1
 
-    total      = len(results)
-    dominant   = max(counts, key=counts.get)
-    avg_conf   = round(sum(r["confidence"] for r in results) / total * 100)
+    total = len(results)
+    dominant = max(counts, key=counts.get)
+    avg_conf = round(sum(r["confidence"] for r in results) / total * 100)
     trend_data = [
         max(5, min(95, (counts["Positive"] / total * 100) + random.randint(-20, 20)))
         for _ in range(8)
     ]
 
-    return jsonify({
-        "keyword":   keyword,
-        "total":     total,
-        "counts":    counts,
-        "dominant":  dominant,
-        "avg_conf":  avg_conf,
-        "tweets":    results[:6],           # top 6 for display
-        "trend":     [round(v) for v in trend_data],
-    })
+    return jsonify(
+        {
+            "keyword": keyword,
+            "source": source,
+            "total": total,
+            "counts": counts,
+            "dominant": dominant,
+            "avg_conf": avg_conf,
+            "tweets": results[:6],  # top 6 for display
+            "trend": [round(v) for v in trend_data],
+        }
+    )
 
 
 if __name__ == "__main__":
